@@ -35,10 +35,6 @@ flowchart LR
 
 Vapi executes custom function tools by POSTing to a `server.url` you host — the traffic direction is Vapi → you. A sandbox pod has outbound internet but is not publicly addressable, so the app exposes `/tool` through a cloudflared quick tunnel it spawns itself. Quick tunnels (unlike free-tier ngrok, which pins one static domain per account) get a unique random URL per invocation, so parallel sims never collide.
 
-## End-of-turn silence
-
-The `voice_ws` actor's VAD needs ~1.5 s of silence to commit end-of-speech, but a WebSocket carries no ambient silence between turns. When Vapi signals the assistant finished speaking (`speech-update`, `status=stopped`), the bridge pumps ~1700 ms of PCM silence so the actor's VAD reliably fires.
-
 ## Run a Veris simulation against it
 
 Everything the simulator needs is in `.veris/`: a `voice_ws` actor channel pointed at the bridge (`ws://localhost:8008/voice`) and `Dockerfile.sandbox`. You need the `veris` CLI and an account — run `veris login` first. `curl` and `jq` are used for the two API calls below.

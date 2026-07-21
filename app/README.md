@@ -8,7 +8,7 @@ The process topology, tunneling, and how to run a simulation live in the
 
 | Module | Role |
 |--------|------|
-| `main.py` | The whole runtime. `WS /voice` creates one Vapi WebSocket call per connection (inline assistant: `agent_desc.txt` prompt, the five tools, PCM16 @ 24 kHz) and pumps audio both ways. `POST /tool` receives Vapi's tool-call webhooks and dispatches them. Also owns the lazy cloudflared quick tunnel and the end-of-turn silence trailer. |
+| `main.py` | The whole runtime. `WS /voice` creates one Vapi WebSocket call per connection (inline assistant: `agent_desc.txt` prompt, the five tools, PCM16 @ 24 kHz) and pumps audio both ways. `POST /tool` receives Vapi's tool-call webhooks and dispatches them. Also owns the lazy cloudflared quick tunnel. |
 | `tools.py` | The five card-ops tool schemas in Vapi's `type=function` + `server.url` shape (`build_tools`), and `dispatch()`, which maps a tool name + args onto one `BCSAPI` method. |
 | `reporting.py` | Veris integration shim. `report_tool_call` fire-and-forgets each tool call to the sandbox engine so it lands in the graded trace; a no-op outside a simulation. |
 | `db.py` | The card-ops schema (pydantic models + enums), a psycopg2 `Database` wrapper, and `BCSAPI`, the validated facade the tools go through. See also [`db/README.md`](../db/README.md) for the data itself. |
@@ -34,7 +34,7 @@ flowchart LR
     pg[("Postgres")]
 
     caller -->|"in"| voice -->|"audio WS"| stt
-    tts -->|"audio WS"| voice -->|"out + silence trailer"| caller
+    tts -->|"audio WS"| voice -->|"out"| caller
     llm -.->|"tool? webhook via tunnel"| tool --> api --> pg
 ```
 
@@ -47,8 +47,6 @@ flowchart LR
 3. A tool call is POSTed to `/tool` through the tunnel →
    `dispatch()` → `BCSAPI` (validation) → `Database` (SQL) → Postgres, and the
    JSON result goes back to Vapi synchronously.
-4. When Vapi signals the assistant stopped speaking, the bridge pumps ~1700 ms
-   of PCM silence so the caller's VAD commits end-of-turn.
 
 ## The five tools
 
