@@ -65,11 +65,6 @@ VAPI_VOICE_MODEL = os.environ.get("VAPI_VOICE_MODEL", "eleven_flash_v2")
 VAPI_TRANSCRIBER_PROVIDER = os.environ.get("VAPI_TRANSCRIBER_PROVIDER", "deepgram")
 VAPI_TRANSCRIBER_MODEL = os.environ.get("VAPI_TRANSCRIBER_MODEL", "nova-2")
 
-# After Vapi tells us the assistant finished speaking, pump ~1700 ms of
-# PCM silence to the actor so the actor's server_vad (silence_duration_ms
-# =1500) reliably fires speech_stopped.
-END_OF_TURN_SILENCE = b"\x00\x00" * (SAMPLE_RATE_HZ * 1700 // 1000)
-
 # Heartbeat log cadence — at ~50 fps that's one line/sec.
 LOG_EVERY_N_FRAMES = 50
 
@@ -430,10 +425,6 @@ async def _pump_vapi_to_actor(vapi_ws, actor_ws: WebSocket) -> None:
       - Text (JSON): control/event messages — transcript, speech-update,
         status-update, conversation-update, tool-calls (informational —
         the actual tool dispatch happens via the HTTP /tool webhook).
-
-    When we observe ``speech-update`` with ``status=stopped`` and
-    ``role=assistant``, we pump 1700 ms of PCM silence so the actor's
-    VAD reliably commits.
     """
     n_audio_frames = 0
     n_audio_bytes = 0
@@ -473,9 +464,6 @@ async def _pump_vapi_to_actor(vapi_ws, actor_ws: WebSocket) -> None:
                 role = (msg or {}).get("role", "?")
                 status = (msg or {}).get("status", "?")
                 logger.info("[v→a] speech-update role=%s status=%s", role, status)
-                if role == "assistant" and status == "stopped":
-                    await actor_ws.send_bytes(END_OF_TURN_SILENCE)
-                    logger.info("[v→a] flushed %d bytes silence trailer", len(END_OF_TURN_SILENCE))
 
             elif mtype == "status-update":
                 status = (msg or {}).get("status", "?")
