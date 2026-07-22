@@ -331,6 +331,9 @@ async def _create_vapi_call() -> dict:
             "model": {
                 "provider": VAPI_MODEL_PROVIDER,
                 "model": VAPI_MODEL,
+                # Vapi's default of 250 truncates longer tool-call results and
+                # model turns.
+                "maxTokens": 500,
                 "messages": [{"role": "system", "content": AGENT_PROMPT}],
                 "tools": build_tools(TOOL_WEBHOOK_URL),
             },
@@ -340,24 +343,39 @@ async def _create_vapi_call() -> dict:
                 "model": VAPI_TRANSCRIBER_MODEL,
                 "language": "en",
             },
-            # Benchmark turn-taking standard: ~0.8 s end-of-turn silence, BEST-
-            # EFFORT and a LOWER BOUND (waitSeconds is a minimum VAPI exceeds
-            # under pipeline latency). VAPI's turn-commit is its hosted
-            # orchestrator and can't be replaced by a shared VAD, so we leave
-            # smartEndpointingPlan unset and use the transcriber-silence +
-            # waitSeconds timer path: ~0.4 s transcription endpointing + 0.4 s
-            # waitSeconds ≈ 0.8 s. This ONLY holds with a transcriber that has
-            # NO built-in end-of-turn model (nova-2, the default here) — an
-            # EOT-capable transcriber would make VAPI ignore
-            # transcriptionEndpointingPlan. Not identical to the silence-VAD
-            # frameworks.
+            # Benchmark turn-taking standard: ~0.8 s end-of-turn silence.
+            # Per Vapi's config review: transcriptionEndpointingPlan is what
+            # controls turn commit, and its countdown starts once the
+            # transcript is received (~250 ms after speech stops), so 0.6 s on
+            # punctuated turns keeps total endpointing at or above ~0.8 s.
+            # waitSeconds is NOT the limiter — it is only the minimum time
+            # before reply audio may flow, measured from the caller's last
+            # detected speech; transcript receipt + endpointing + LLM + TTS
+            # normally exceeds it. This path ONLY holds with a transcriber
+            # that has NO built-in end-of-turn model (nova-2, the default
+            # here) — an EOT-capable transcriber would make Vapi ignore
+            # transcriptionEndpointingPlan.
             "startSpeakingPlan": {
-                "waitSeconds": 0.4,
+                "waitSeconds": 0.8,
                 "transcriptionEndpointingPlan": {
-                    "onPunctuationSeconds": 0.4,
-                    "onNoPunctuationSeconds": 0.4,
-                    "onNumberSeconds": 0.4,
+                    "onPunctuationSeconds": 0.6,
+                    "onNoPunctuationSeconds": 1.2,
+                    "onNumberSeconds": 0.7,
                 },
+            },
+            # Barge-in needs 2 confidently transcribed words, except the
+            # listed phrases, which interrupt immediately.
+            "stopSpeakingPlan": {
+                "numWords": 2,
+                "voiceSeconds": 0.2,
+                "backoffSeconds": 1,
+                "interruptionPhrases": ["stop", "hold on"],
+            },
+            # Vapi denoises by default; off here for parity with the other
+            # Riley transports — background noise is not part of the benchmark.
+            "backgroundSpeechDenoisingPlan": {
+                "smartDenoisingPlan": {"enabled": False},
+                "fourierDenoisingPlan": {"enabled": False},
             },
             "silenceTimeoutSeconds": 60,
             "maxDurationSeconds": 1800,
