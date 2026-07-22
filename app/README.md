@@ -85,9 +85,17 @@ reason.
   the OpenAI shape (`{id, function: {name, arguments}}`); older docs showed a
   flat `{id, name, arguments}`. Both are handled.
 - **Endpointing is Vapi's, tuned to ~0.8 s.** Vapi's turn-commit runs in its
-  hosted orchestrator and can't be replaced; `startSpeakingPlan` uses the
-  transcriber-silence + `waitSeconds` path (0.4 s + 0.4 s) to approximate the
-  0.8 s standard shared across the Riley transports.
+  hosted orchestrator and can't be replaced; `transcriptionEndpointingPlan`
+  is what controls it, and its countdown starts once the transcript arrives
+  (~0.25 s after speech stops), so 0.6 s on punctuated turns keeps total
+  endpointing at or above the 0.8 s standard shared across the Riley
+  transports. `waitSeconds` is only a floor on how soon reply audio may flow,
+  never the limiter.
+- **Interruption and denoising are tuned per Vapi's config review.**
+  `stopSpeakingPlan` requires 2 confidently transcribed words to barge in
+  ("stop" / "hold on" interrupt immediately), and background speech denoising
+  — on by default in Vapi — is disabled for parity with the other Riley
+  transports, where background noise is not tested.
 - **Tool dispatch is `sync` inside an async handler.** psycopg2 is synchronous;
   tool calls are infrequent enough that briefly blocking the loop on a quick
   query is fine. Don't make `db.py` async without a reason.
